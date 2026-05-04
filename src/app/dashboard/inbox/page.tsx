@@ -61,6 +61,8 @@ function mergeConversation(
 
 const POLL_MS = 3000;
 
+const STATUS_OPTIONS = ["OPEN", "PENDING", "CLOSED"] as const;
+
 export default function InboxPage() {
   const [conversations, setConversations] = useState<ApiConversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export default function InboxPage() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   const conversationsRef = useRef(conversations);
   const selectedIdRef = useRef(selectedId);
@@ -130,6 +133,31 @@ export default function InboxPage() {
   }, [selectedId]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  async function handleStatusChange(nextStatus: string) {
+    if (!selectedId || !selected || nextStatus === selected.status || statusUpdating) return;
+
+    setStatusUpdating(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      if (!res.ok) return;
+
+      const data: { conversation: ApiConversation } = await res.json();
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === data.conversation.id ? mergeConversation(c, data.conversation) : c,
+        ),
+      );
+    } finally {
+      setStatusUpdating(false);
+    }
+  }
 
   async function handleSend(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -234,8 +262,8 @@ export default function InboxPage() {
           )}
         </div>
 
-        {/* Customer */}
-        <div className="flex w-56 shrink-0 flex-col gap-1 overflow-y-auto border-l border-border p-3 text-sm">
+        {/* Customer + status */}
+        <div className="flex w-56 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3 text-sm">
           <div className="font-medium">Customer</div>
           {selected ? (
             <>
@@ -246,6 +274,24 @@ export default function InboxPage() {
               <div>
                 <span className="text-muted-foreground">Email: </span>
                 {selected.customer.email ?? "—"}
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="conversation-status" className="text-muted-foreground">
+                  Status
+                </label>
+                <select
+                  id="conversation-status"
+                  value={selected.status}
+                  disabled={statusUpdating}
+                  onChange={(e) => void handleStatusChange(e.target.value)}
+                  className="border-input rounded border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </div>
             </>
           ) : (
