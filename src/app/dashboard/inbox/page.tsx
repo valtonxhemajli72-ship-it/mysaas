@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type ApiMessage = {
   id: string;
@@ -33,6 +33,34 @@ type ApiConversation = {
   messages: ApiMessage[];
 };
 
+function mergeMessages(existing: ApiMessage[], incoming: ApiMessage[]): ApiMessage[] {
+  const map = new Map<string, ApiMessage>();
+  for (const m of existing) {
+    map.set(m.id, m);
+  }
+  for (const m of incoming) {
+    map.set(m.id, m);
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
+function mergeConversation(
+  previous: ApiConversation | undefined,
+  incoming: ApiConversation,
+): ApiConversation {
+  if (!previous) {
+    return incoming;
+  }
+  return {
+    ...incoming,
+    messages: mergeMessages(previous.messages, incoming.messages),
+  };
+}
+
+const POLL_MS = 3000;
+
 export default function InboxPage() {
   const [conversations, setConversations] = useState<ApiConversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -41,10 +69,21 @@ export default function InboxPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
 
+  const conversationsRef = useRef(conversations);
+  const selectedIdRef = useRef(selectedId);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
+    async function fetchInbox(isInitial: boolean) {
       try {
         const res = await fetch("/api/conversations");
         if (!res.ok) {
@@ -52,21 +91,37 @@ export default function InboxPage() {
         }
         const data: { conversations: ApiConversation[] } = await res.json();
         if (cancelled) return;
-        setConversations(data.conversations);
-        setSelectedId(data.conversations[0]?.id ?? null);
+
+        const prev = conversationsRef.current;
+        const merged = data.conversations.map((serverConv) => {
+          const old = prev.find((c) => c.id === serverConv.id);
+          return mergeConversation(old, serverConv);
+        });
+
+        const prevSel = selectedIdRef.current;
+        const nextSel =
+          prevSel && merged.some((c) => c.id === prevSel) ? prevSel : (merged[0]?.id ?? null);
+
+        setConversations(merged);
+        setSelectedId(nextSel);
+        setError(null);
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && isInitial) {
           setError(e instanceof Error ? e.message : "Failed to load inbox");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && isInitial) {
           setLoading(false);
         }
       }
-    })();
+    }
+
+    void fetchInbox(true);
+    const intervalId = window.setInterval(() => void fetchInbox(false), POLL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -98,7 +153,7 @@ export default function InboxPage() {
       const created: ApiMessage = await res.json();
 
       setConversations((prev) =>
-        prev.map((c) => (c.id === selectedId ? { ...c, messages: [...c.messages, created] } : c)),
+        prev.map((c) => (c.id === selectedId ? { ...c, messages: mergeMessages(c.messages, [created]) } : c)),
       );
       setDraft("");
     } catch {
