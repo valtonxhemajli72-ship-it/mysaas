@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 type ApiMessage = {
   id: string;
@@ -38,6 +38,8 @@ export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +70,43 @@ export default function InboxPage() {
     };
   }, []);
 
+  useEffect(() => {
+    setDraft("");
+  }, [selectedId]);
+
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  async function handleSend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedId || !draft.trim() || sending) return;
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: selectedId,
+          content: draft.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Send failed (${res.status})`);
+      }
+
+      const created: ApiMessage = await res.json();
+
+      setConversations((prev) =>
+        prev.map((c) => (c.id === selectedId ? { ...c, messages: [...c.messages, created] } : c)),
+      );
+      setDraft("");
+    } catch {
+      // kept minimal per requirements
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -102,20 +140,42 @@ export default function InboxPage() {
           )}
         </div>
 
-        {/* Messages */}
-        <div className="min-w-0 flex-1 overflow-y-auto p-3">
-          {!selected && !loading && <p className="text-muted-foreground text-sm">Select a conversation.</p>}
+        {/* Messages + compose */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {!selected && !loading && <p className="text-muted-foreground text-sm">Select a conversation.</p>}
+            {selected && (
+              <ul className="flex flex-col gap-2">
+                {selected.messages.map((m) => (
+                  <li key={m.id} className="rounded border border-border px-2 py-1 text-sm">
+                    <div className="text-muted-foreground text-xs">
+                      {m.direction} · {m.senderType} · {new Date(m.createdAt).toLocaleString()}
+                    </div>
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           {selected && (
-            <ul className="flex flex-col gap-2">
-              {selected.messages.map((m) => (
-                <li key={m.id} className="rounded border border-border px-2 py-1 text-sm">
-                  <div className="text-muted-foreground text-xs">
-                    {m.direction} · {m.senderType} · {new Date(m.createdAt).toLocaleString()}
-                  </div>
-                  <div className="whitespace-pre-wrap">{m.content}</div>
-                </li>
-              ))}
-            </ul>
+            <form onSubmit={(e) => void handleSend(e)} className="flex shrink-0 gap-2 border-t border-border p-2">
+              <input
+                name="content"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                className="border-input flex-1 rounded border bg-background px-2 py-1 text-sm"
+                placeholder="Reply…"
+                autoComplete="off"
+                disabled={sending}
+              />
+              <button
+                type="submit"
+                disabled={sending || !draft.trim()}
+                className="rounded border border-border bg-muted px-3 py-1 text-sm font-medium disabled:opacity-50"
+              >
+                Send
+              </button>
+            </form>
           )}
         </div>
 
