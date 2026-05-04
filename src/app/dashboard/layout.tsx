@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { OrganizationSwitcher, SignedIn } from "@clerk/nextjs";
 
+import { DashboardNav } from "@/components/dashboard-nav";
 import { UserNav } from "@/components/user-nav";
 import { syncOrganizationFromClerk } from "@/server/sync-organization";
 
@@ -20,6 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Link href="/dashboard" className="font-semibold tracking-tight">
               MySaaS
             </Link>
+            <DashboardNav />
             <SignedIn>
               <OrganizationSwitcher
                 hidePersonal

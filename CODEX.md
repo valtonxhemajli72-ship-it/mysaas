@@ -41,3 +41,23 @@ Never commit:
 - secrets
 - API keys
 - database passwords
+
+## Project Rules
+
+- This is a multi-tenant SaaS (Clerk organizations)
+- NEVER access data without organizationId filtering
+- Always use Prisma for DB
+- Do not break existing API routes
+- Do not remove existing working features
+
+## Code Style
+
+- Keep code simple and readable
+- Prefer small changes over big rewrites
+- Do not introduce new libraries unless necessary
+
+## Workflow
+
+- After schema changes → run prisma migrate
+- After API changes → test endpoints
+- After UI changes → keep it minimal and functional
