@@ -1,3 +1,7 @@
+/**
+ * DEV / LOCAL TEST ONLY — uses a hardcoded organization id and bypasses tenant auth.
+ * Remove this route (and its middleware public exception) before production.
+ */
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";

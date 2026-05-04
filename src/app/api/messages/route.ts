@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { requireTenantOrganization } from "@/server/require-tenant-organization";
 
 export async function POST(request: Request) {
+  const tenant = await requireTenantOrganization();
+  if (!tenant.ok) {
+    return tenant.response;
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -24,9 +30,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "content required" }, { status: 400 });
   }
 
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: { organizationId: true },
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      id: conversationId,
+      organizationId: tenant.organizationId,
+    },
+    select: { id: true, organizationId: true },
   });
 
   if (!conversation) {
@@ -36,7 +45,7 @@ export async function POST(request: Request) {
   const message = await prisma.message.create({
     data: {
       organizationId: conversation.organizationId,
-      conversationId,
+      conversationId: conversation.id,
       content: content.trim(),
       direction: "OUTBOUND",
       senderType: "AGENT",
