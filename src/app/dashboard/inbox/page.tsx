@@ -23,6 +23,12 @@ type ApiChannel = {
   type: string;
 };
 
+type ApiNote = {
+  id: string;
+  content: string;
+  createdAt: string;
+};
+
 type ApiConversation = {
   id: string;
   organizationId: string;
@@ -31,6 +37,7 @@ type ApiConversation = {
   customer: ApiCustomer;
   channel: ApiChannel;
   messages: ApiMessage[];
+  notes: ApiNote[];
 };
 
 function mergeMessages(existing: ApiMessage[], incoming: ApiMessage[]): ApiMessage[] {
@@ -46,15 +53,32 @@ function mergeMessages(existing: ApiMessage[], incoming: ApiMessage[]): ApiMessa
   );
 }
 
+function mergeNotes(existing: ApiNote[], incoming: ApiNote[]): ApiNote[] {
+  const map = new Map<string, ApiNote>();
+  for (const n of existing) {
+    map.set(n.id, n);
+  }
+  for (const n of incoming) {
+    map.set(n.id, n);
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
 function mergeConversation(
   previous: ApiConversation | undefined,
   incoming: ApiConversation,
 ): ApiConversation {
   if (!previous) {
-    return incoming;
+    return {
+      ...incoming,
+      notes: incoming.notes ?? [],
+    };
   }
   return {
     ...incoming,
+    notes: mergeNotes(previous.notes ?? [], incoming.notes ?? []),
     messages: mergeMessages(previous.messages, incoming.messages),
   };
 }
@@ -71,6 +95,8 @@ export default function InboxPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const conversationsRef = useRef(conversations);
   const selectedIdRef = useRef(selectedId);
@@ -130,6 +156,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     setDraft("");
+    setNoteDraft("");
   }, [selectedId]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
@@ -156,6 +183,35 @@ export default function InboxPage() {
       );
     } finally {
       setStatusUpdating(false);
+    }
+  }
+
+  async function handleAddNote(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedId || !noteDraft.trim() || noteSaving) return;
+
+    setNoteSaving(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: noteDraft.trim() }),
+      });
+
+      if (!res.ok) return;
+
+      const data: { note: ApiNote } = await res.json();
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedId
+            ? { ...c, notes: mergeNotes(c.notes ?? [], [data.note]) }
+            : c,
+        ),
+      );
+      setNoteDraft("");
+    } finally {
+      setNoteSaving(false);
     }
   }
 
@@ -262,8 +318,8 @@ export default function InboxPage() {
           )}
         </div>
 
-        {/* Customer + status */}
-        <div className="flex w-56 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3 text-sm">
+        {/* Customer + status + notes */}
+        <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3 text-sm">
           <div className="font-medium">Customer</div>
           {selected ? (
             <>
@@ -292,6 +348,39 @@ export default function InboxPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="border-border mt-1 border-t pt-3">
+                <div className="mb-2 font-medium">Internal notes</div>
+                <ul className="mb-2 max-h-40 space-y-2 overflow-y-auto">
+                  {(selected.notes ?? []).length === 0 ? (
+                    <li className="text-muted-foreground text-xs">No notes yet.</li>
+                  ) : (
+                    (selected.notes ?? []).map((n) => (
+                      <li key={n.id} className="rounded border border-border px-2 py-1 text-xs">
+                        <div className="text-muted-foreground">{new Date(n.createdAt).toLocaleString()}</div>
+                        <div className="mt-0.5 whitespace-pre-wrap">{n.content}</div>
+                      </li>
+                    ))
+                  )}
+                </ul>
+                <form onSubmit={(e) => void handleAddNote(e)} className="flex flex-col gap-2">
+                  <textarea
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    rows={3}
+                    placeholder="Add an internal note…"
+                    disabled={noteSaving}
+                    className="border-input resize-y rounded border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={noteSaving || !noteDraft.trim()}
+                    className="rounded border border-border bg-muted px-2 py-1 text-xs font-medium disabled:opacity-50"
+                  >
+                    Add note
+                  </button>
+                </form>
               </div>
             </>
           ) : (

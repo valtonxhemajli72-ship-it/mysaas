@@ -18,6 +18,9 @@ export async function GET() {
       messages: {
         orderBy: { createdAt: "asc" },
       },
+      notes: {
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 

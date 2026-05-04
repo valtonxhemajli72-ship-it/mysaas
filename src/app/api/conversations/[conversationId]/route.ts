@@ -53,6 +53,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ conve
       customer: true,
       channel: true,
       messages: { orderBy: { createdAt: "asc" } },
+      notes: { orderBy: { createdAt: "asc" } },
     },
   });
 
