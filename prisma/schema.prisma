@@ -15,6 +15,31 @@ enum OrgRole {
   MEMBER
 }
 
+enum ChannelType {
+  EMAIL
+  WEBSITE_CHAT
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageSenderType {
+  CUSTOMER
+  AGENT
+  SYSTEM
+}
+
 model Organization {
   id           String   @id @default(cuid())
   clerkOrgId   String   @unique
@@ -24,9 +49,74 @@ model Organization {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships OrgMembership[]
+  memberships   OrgMembership[]
+  customers     Customer[]
+  channels      Channel[]
+  conversations Conversation[]
+  messages      Message[]
 
   @@index([clerkOrgId])
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  createdAt      DateTime @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@index([organizationId])
+}
+
+model Channel {
+  id             String      @id @default(cuid())
+  organizationId String
+  type           ChannelType
+  name           String
+  createdAt      DateTime    @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@index([organizationId])
+}
+
+model Conversation {
+  id             String             @id @default(cuid())
+  organizationId String
+  customerId     String
+  channelId      String
+  status         ConversationStatus @default(OPEN)
+  createdAt      DateTime           @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  messages     Message[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([channelId])
+}
+
+model Message {
+  id             String            @id @default(cuid())
+  organizationId String
+  conversationId String
+  content        String            @db.Text
+  direction      MessageDirection
+  senderType     MessageSenderType
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([conversationId])
 }
 
 model OrgMembership {
