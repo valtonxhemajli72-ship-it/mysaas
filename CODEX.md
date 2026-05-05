@@ -61,3 +61,11 @@ Never commit:
 - After schema changes → run prisma migrate
 - After API changes → test endpoints
 - After UI changes → keep it minimal and functional
+
+## Current Phase
+We are building a multi-tenant inbox SaaS with:
+- Conversations
+- Messages
+- Notes
+- Status updates
+- Clerk organizations

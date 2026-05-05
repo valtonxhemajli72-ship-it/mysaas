@@ -21,6 +21,9 @@ export async function GET() {
       notes: {
         orderBy: { createdAt: "asc" },
       },
+      tags: {
+        orderBy: { name: "asc" },
+      },
     },
   });
 

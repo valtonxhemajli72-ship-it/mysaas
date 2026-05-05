@@ -55,6 +55,7 @@ model Organization {
   conversations Conversation[]
   messages      Message[]
   notes         Note[]
+  tags          Tag[]
 
   @@index([clerkOrgId])
 }
@@ -99,6 +100,7 @@ model Conversation {
   channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Restrict)
   messages     Message[]
   notes        Note[]
+  tags         Tag[]
 
   @@index([organizationId])
   @@index([customerId])
@@ -134,6 +136,20 @@ model Note {
 
   @@index([organizationId])
   @@index([conversationId])
+}
+
+model Tag {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  color          String
+  createdAt      DateTime @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model OrgMembership {

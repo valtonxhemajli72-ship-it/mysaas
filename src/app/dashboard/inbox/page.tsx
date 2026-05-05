@@ -29,6 +29,14 @@ type ApiNote = {
   createdAt: string;
 };
 
+type ApiTag = {
+  id: string;
+  name: string;
+  color: string;
+  organizationId?: string;
+  createdAt?: string;
+};
+
 type ApiConversation = {
   id: string;
   organizationId: string;
@@ -38,6 +46,7 @@ type ApiConversation = {
   channel: ApiChannel;
   messages: ApiMessage[];
   notes: ApiNote[];
+  tags: ApiTag[];
 };
 
 function mergeMessages(existing: ApiMessage[], incoming: ApiMessage[]): ApiMessage[] {
@@ -74,11 +83,13 @@ function mergeConversation(
     return {
       ...incoming,
       notes: incoming.notes ?? [],
+      tags: incoming.tags ?? [],
     };
   }
   return {
     ...incoming,
     notes: mergeNotes(previous.notes ?? [], incoming.notes ?? []),
+    tags: incoming.tags ?? [],
     messages: mergeMessages(previous.messages, incoming.messages),
   };
 }
@@ -86,6 +97,8 @@ function mergeConversation(
 const POLL_MS = 3000;
 
 const STATUS_OPTIONS = ["OPEN", "PENDING", "CLOSED"] as const;
+
+const TAG_COLOR_PRESETS = ["#6366f1", "#22c55e", "#eab308", "#ef4444", "#64748b", "#a855f7"] as const;
 
 export default function InboxPage() {
   const [conversations, setConversations] = useState<ApiConversation[]>([]);
@@ -97,6 +110,11 @@ export default function InboxPage() {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const [orgTags, setOrgTags] = useState<ApiTag[]>([]);
+  const [tagsUpdating, setTagsUpdating] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState<string>(TAG_COLOR_PRESETS[0]);
+  const [tagPick, setTagPick] = useState("");
 
   const conversationsRef = useRef(conversations);
   const selectedIdRef = useRef(selectedId);
@@ -108,6 +126,25 @@ export default function InboxPage() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/tags");
+        if (!res.ok) return;
+        const data: { tags: ApiTag[] } = await res.json();
+        if (!cancelled) setOrgTags(data.tags);
+      } catch {
+        /* ignore */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +197,61 @@ export default function InboxPage() {
   }, [selectedId]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  const availableTagsToAdd = selected
+    ? orgTags.filter((ot) => !(selected.tags ?? []).some((t) => t.id === ot.id))
+    : [];
+
+  async function applyConversationTags(tagIds: string[]) {
+    if (!selectedId) return;
+
+    setTagsUpdating(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/tags`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tagIds }),
+      });
+
+      if (!res.ok) return;
+
+      const data: { conversation: ApiConversation } = await res.json();
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === data.conversation.id ? mergeConversation(c, data.conversation) : c,
+        ),
+      );
+    } finally {
+      setTagsUpdating(false);
+    }
+  }
+
+  async function handleCreateTag(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!newTagName.trim()) return;
+
+    try {
+      const res = await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
+      });
+
+      if (!res.ok) return;
+
+      const data: { tag: ApiTag } = await res.json();
+      setOrgTags((prev) => [...prev, data.tag].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewTagName("");
+
+      if (selectedId) {
+        const currentIds = conversations.find((c) => c.id === selectedId)?.tags?.map((t) => t.id) ?? [];
+        await applyConversationTags([...currentIds, data.tag.id]);
+      }
+    } catch {
+      /* minimal */
+    }
+  }
 
   async function handleStatusChange(nextStatus: string) {
     if (!selectedId || !selected || nextStatus === selected.status || statusUpdating) return;
@@ -272,6 +364,19 @@ export default function InboxPage() {
                 <div className="text-muted-foreground text-xs">
                   {c.status} · {c.channel.name}
                 </div>
+                {(c.tags ?? []).length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {(c.tags ?? []).map((t) => (
+                      <span
+                        key={t.id}
+                        className="max-w-full truncate rounded px-1.5 py-0.5 text-[10px] leading-none text-white"
+                        style={{ backgroundColor: t.color }}
+                      >
+                        {t.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </button>
             ))}
           {!loading && !error && conversations.length === 0 && (
@@ -348,6 +453,88 @@ export default function InboxPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="border-border mt-1 border-t pt-3">
+                <div className="mb-2 font-medium">Tags</div>
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {(selected.tags ?? []).map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={tagsUpdating}
+                      title={`Remove ${t.name}`}
+                      onClick={() =>
+                        void applyConversationTags(
+                          (selected.tags ?? []).filter((x) => x.id !== t.id).map((x) => x.id),
+                        )
+                      }
+                      className="inline-flex max-w-full items-center gap-0.5 truncate rounded px-1.5 py-0.5 text-[10px] leading-none text-white disabled:opacity-50"
+                      style={{ backgroundColor: t.color }}
+                    >
+                      <span className="truncate">{t.name}</span>
+                      <span aria-hidden className="shrink-0">
+                        ×
+                      </span>
+                    </button>
+                  ))}
+                  {(selected.tags ?? []).length === 0 && (
+                    <span className="text-muted-foreground text-xs">No tags</span>
+                  )}
+                </div>
+                <div className="mb-3 flex flex-col gap-1">
+                  <label htmlFor="add-tag" className="text-muted-foreground text-xs">
+                    Add tag
+                  </label>
+                  <select
+                    id="add-tag"
+                    value={tagPick}
+                    disabled={tagsUpdating || availableTagsToAdd.length === 0}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (!id || !selected) return;
+                      void applyConversationTags([...(selected.tags ?? []).map((t) => t.id), id]);
+                      setTagPick("");
+                    }}
+                    className="border-input rounded border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                  >
+                    <option value="">{availableTagsToAdd.length === 0 ? "No more tags" : "Choose…"}</option>
+                    {availableTagsToAdd.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <form onSubmit={(e) => void handleCreateTag(e)} className="mb-3 flex flex-col gap-1 border-border border-b pb-3">
+                  <div className="text-muted-foreground text-xs">New tag</div>
+                  <input
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    placeholder="Name"
+                    disabled={tagsUpdating}
+                    className="border-input rounded border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                  />
+                  <select
+                    value={newTagColor}
+                    onChange={(e) => setNewTagColor(e.target.value)}
+                    disabled={tagsUpdating}
+                    className="border-input rounded border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                  >
+                    {TAG_COLOR_PRESETS.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={tagsUpdating || !newTagName.trim()}
+                    className="rounded border border-border bg-muted px-2 py-1 text-xs font-medium disabled:opacity-50"
+                  >
+                    Create {selectedId ? "& attach" : ""}
+                  </button>
+                </form>
               </div>
 
               <div className="border-border mt-1 border-t pt-3">
